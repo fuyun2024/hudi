@@ -191,6 +191,7 @@ public class MergeOnReadInputFormat
     }
 
     if (!(split.getLogPaths().isPresent() && split.getLogPaths().get().size() > 0)) {
+      //  只有 parquet 读取的场景
       if (split.getInstantRange().isPresent()) {
         // base file only with commit time filtering
         this.iterator = new BaseFileOnlyFilteringIterator(
@@ -201,11 +202,13 @@ public class MergeOnReadInputFormat
             .orElse(RowDataProjection.instance(tableState.getRequiredRowType(), positions));
         projectRecordIterator(projection);
       } else {
+        // 仅仅只有 parquet 文件的时候
         // base file only
         this.iterator = new BaseFileOnlyIterator(getRequiredSchemaReader(split.getBasePath().get()));
         projectRecordIterator();
       }
     } else if (!split.getBasePath().isPresent()) {
+      // 仅仅只有 Binlog 的时候
       // log files only
       if (OptionsResolver.emitChangelog(conf)) {
         this.iterator = new LogFileOnlyIterator(getUnMergedLogFileIterator(split));
@@ -357,13 +360,21 @@ public class MergeOnReadInputFormat
   }
 
   private ClosableIterator<RowData> getLogFileIterator(MergeOnReadInputSplit split) {
+    // 表的 schema
     final Schema tableSchema = new Schema.Parser().parse(tableState.getAvroSchema());
+
+    // 请求的 schema
     final Schema requiredSchema = new Schema.Parser().parse(tableState.getRequiredAvroSchema());
+
+    // 请求字段的转换器
     final GenericRecordBuilder recordBuilder = new GenericRecordBuilder(requiredSchema);
     final AvroToRowDataConverters.AvroToRowDataConverter avroToRowDataConverter =
         AvroToRowDataConverters.createRowConverter(tableState.getRequiredRowType());
+
+    // 获取 log 文件扫描
     final HoodieMergedLogRecordScanner scanner = FormatUtils.logScanner(split, tableSchema, querySchema, conf, hadoopConf);
     final Iterator<String> logRecordsKeyIterator = scanner.getRecords().keySet().iterator();
+
     final int[] pkOffset = tableState.getPkOffsetsInRequired();
     // flag saying whether the pk semantics has been dropped by user specified
     // projections. For e.g, if the pk fields are [a, b] but user only select a,
@@ -378,8 +389,11 @@ public class MergeOnReadInputFormat
       @Override
       public boolean hasNext() {
         while (logRecordsKeyIterator.hasNext()) {
+          // 读取记录对应的 key
           String curAvroKey = logRecordsKeyIterator.next();
           Option<IndexedRecord> curAvroRecord = null;
+
+          // 读取对应的记录
           final HoodieAvroRecord<?> hoodieRecord = (HoodieAvroRecord) scanner.getRecords().get(curAvroKey);
           try {
             curAvroRecord = hoodieRecord.getData().getInsertValue(tableSchema);
@@ -416,6 +430,7 @@ public class MergeOnReadInputFormat
                 requiredSchema,
                 requiredPos,
                 recordBuilder);
+            // gr 记录转换成为 rowData 数据
             currentRecord = (RowData) avroToRowDataConverter.convert(requiredAvroRecord);
             currentRecord.setRowKind(rowKind);
             return true;

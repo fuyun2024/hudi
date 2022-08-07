@@ -579,6 +579,7 @@ public abstract class HoodieTable<T extends HoodieRecordPayload, I, K, O> implem
     getActiveTimeline().revertInstantFromInflightToRequested(inflightInstant);
   }
 
+  // 将写入的数据最终确定到存储中。执行任何最终清理。
   /**
    * Finalize the written data onto storage. Perform any final cleanups.
    *

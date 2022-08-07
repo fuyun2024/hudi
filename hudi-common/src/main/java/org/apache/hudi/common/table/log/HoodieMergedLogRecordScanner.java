@@ -106,6 +106,7 @@ public class HoodieMergedLogRecordScanner extends AbstractHoodieLogRecordReader
 
   protected void performScan() {
     // Do the scan and merge
+    // 进行扫描并合并
     timer.startTimer();
     scan();
     this.totalTimeTakenToReadAndMergeBlocks = timer.endTimer();

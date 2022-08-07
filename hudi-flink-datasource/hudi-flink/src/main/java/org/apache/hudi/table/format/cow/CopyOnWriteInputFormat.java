@@ -118,14 +118,23 @@ public class CopyOnWriteInputFormat extends FileInputFormat<RowData> {
 
   @Override
   public void open(FileInputSplit fileSplit) throws IOException {
+    // 真实字段类类型
     String[] actualFieldNames;
     DataType[] actualFieldTypes;
+    // 是否开启了 schema 变更
     if (schemaEvolutionContext.isPresent()) {
       SchemaEvolutionContext context = schemaEvolutionContext.get();
+
+      // 从文件中获取 schema 信息
       InternalSchema actualSchema = context.getActualSchema(fileSplit);
       List<DataType> fieldTypes = context.getFieldTypes(actualSchema);
+
+      // 获取有差异的列信息, 这个信息主要是去兼容不同类型的转换
       CastMap castMap = context.getCastMap(context.getQuerySchema(), actualSchema);
+
+      // selectedFields 跳转到真实位置
       int[] selectedFields = Arrays.stream(this.selectedFields).map(pos -> pos + HOODIE_META_COLUMNS.size()).toArray();
+
       if (castMap.containsAnyPos(selectedFields)) {
         int[] requiredFields = IntStream.range(0, this.selectedFields.length).toArray();
         projection = Option.of(new RowDataCastProjection(

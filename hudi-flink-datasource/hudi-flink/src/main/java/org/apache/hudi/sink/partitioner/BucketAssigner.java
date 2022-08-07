@@ -39,6 +39,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
+ * 将一个检查点的数据缓冲区分配到桶中的桶分配器。
+ * 如果记录是更新，则检查并重用现有的 UPDATE 桶或生成一个新桶；
+ * 如果记录是插入，首先检查记录分区是否有小文件，如果没有小文件（或没有剩余空间用于新记录），生成一个 INSERT 存储桶。
+ * 使用 {partition}_{fileId} 作为桶标识符，以便桶在分区内和分区之间是唯一的
+ */
+
+/**
  * Bucket assigner that assigns the data buffer of one checkpoint into buckets.
  *
  * <p>This assigner assigns the record one by one.

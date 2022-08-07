@@ -76,6 +76,7 @@ public abstract class HoodieWriteHandle<T extends HoodieRecordPayload, I, K, O> 
    */
   public static IgnoreRecord IGNORE_RECORD = new IgnoreRecord();
 
+  // 表的指定架构。 （“指定”表示这是由客户端配置的，而不是从提交元数据中隐式提取）
   /**
    * The specified schema of the table. ("specified" denotes that this is configured by the client,
    * as opposed to being implicitly fetched out of the commit metadata)
@@ -118,6 +119,7 @@ public abstract class HoodieWriteHandle<T extends HoodieRecordPayload, I, K, O> 
     this.fileId = fileId;
     this.tableSchema = overriddenSchema.orElseGet(() -> getSpecifiedTableSchema(config));
     this.tableSchemaWithMetaFields = HoodieAvroUtils.addMetadataFields(tableSchema, config.allowOperationMetadataField());
+    // hoodie.write.schema
     this.writeSchema = overriddenSchema.orElseGet(() -> getWriteSchema(config));
     this.writeSchemaWithMetaFields = HoodieAvroUtils.addMetadataFields(writeSchema, config.allowOperationMetadataField());
     this.timer = new HoodieTimer().startTimer();

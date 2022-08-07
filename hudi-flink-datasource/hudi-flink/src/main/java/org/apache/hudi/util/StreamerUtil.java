@@ -228,6 +228,7 @@ public class StreamerUtil {
             .withAutoCommit(false)
             .withAllowOperationMetadataField(conf.getBoolean(FlinkOptions.CHANGELOG_ENABLED))
             .withProps(flinkConf2TypedProperties(conf))
+                // 获取 SOURCE_AVRO_SCHEMA 设置到 AVRO_SCHEMA_STRING 中
             .withSchema(getSourceSchema(conf).toString());
 
     HoodieWriteConfig writeConfig = builder.build();

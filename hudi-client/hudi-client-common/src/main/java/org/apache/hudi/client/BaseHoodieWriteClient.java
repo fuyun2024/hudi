@@ -224,13 +224,17 @@ public abstract class BaseHoodieWriteClient<T extends HoodieRecordPayload, I, K,
     LOG.info("Committing " + instantTime + " action " + commitActionType);
     // Create a Hoodie table which encapsulated the commits and files visible
     HoodieTable table = createTable(config, hadoopConf);
+
+    // 构建提交的信息
     HoodieCommitMetadata metadata = CommitUtils.buildMetadata(stats, partitionToReplaceFileIds,
         extraMetadata, operationType, config.getWriteSchema(), commitActionType);
+
     HoodieInstant inflightInstant = new HoodieInstant(State.INFLIGHT, table.getMetaClient().getCommitActionType(), instantTime);
     HeartbeatUtils.abortIfHeartbeatExpired(instantTime, table, heartbeatClient, config);
     this.txnManager.beginTransaction(Option.of(inflightInstant),
         lastCompletedTxnAndMetadata.isPresent() ? Option.of(lastCompletedTxnAndMetadata.get().getLeft()) : Option.empty());
     try {
+      //
       preCommit(inflightInstant, metadata);
       commit(table, commitActionType, instantTime, metadata, stats);
       // already within lock, and so no lock requried for archival
@@ -262,7 +266,8 @@ public abstract class BaseHoodieWriteClient<T extends HoodieRecordPayload, I, K,
     // Finalize write
     finalizeWrite(table, instantTime, stats);
     // do save internal schema to support Implicitly add columns in write process
-    if (!metadata.getExtraMetadata().containsKey(SerDeHelper.LATEST_SCHEMA)
+    // 存储 schema
+    if (!metadata.getExtraMetadata().containsKey(SerDeHelper.LATEST_SCHEMA) // 手动 add 才会有
         && metadata.getExtraMetadata().containsKey(SCHEMA_KEY) && table.getConfig().getSchemaEvolutionEnable()) {
       saveInternalSchema(table, instantTime, metadata);
     }
@@ -274,28 +279,40 @@ public abstract class BaseHoodieWriteClient<T extends HoodieRecordPayload, I, K,
 
   // Save internal schema
   private void saveInternalSchema(HoodieTable table, String instantTime, HoodieCommitMetadata metadata) {
+    // 历史的 schema
     TableSchemaResolver schemaUtil = new TableSchemaResolver(table.getMetaClient());
     String historySchemaStr = schemaUtil.getTableHistorySchemaStrFromCommitMetadata().orElse("");
+
+    // schema 管理者
     FileBasedInternalSchemaStorageManager schemasManager = new FileBasedInternalSchemaStorageManager(table.getMetaClient());
     if (!historySchemaStr.isEmpty() || Boolean.parseBoolean(config.getString(HoodieCommonConfig.RECONCILE_SCHEMA.key()))) {
+      // 现在内部的 schema
       InternalSchema internalSchema;
       Schema avroSchema = HoodieAvroUtils.addMetadataFields(new Schema.Parser().parse(config.getSchema()), config.allowOperationMetadataField());
       if (historySchemaStr.isEmpty()) {
         internalSchema = AvroInternalSchemaConverter.convert(avroSchema);
         internalSchema.setSchemaId(Long.parseLong(instantTime));
       } else {
+        // 传一个一个时间线，获取离现在最近的 schema
         internalSchema = InternalSchemaUtils.searchSchema(Long.parseLong(instantTime),
             SerDeHelper.parseSchemas(historySchemaStr));
       }
+
+      // 协调架构当前
       InternalSchema evolvedSchema = AvroSchemaEvolutionUtils.reconcileSchema(avroSchema, internalSchema);
+
+      // 协调后的架构和现有的一样
       if (evolvedSchema.equals(internalSchema)) {
         metadata.addMetadata(SerDeHelper.LATEST_SCHEMA, SerDeHelper.toJson(evolvedSchema));
         //TODO save history schema by metaTable
         schemasManager.persistHistorySchemaStr(instantTime, historySchemaStr.isEmpty() ? SerDeHelper.inheritSchemas(evolvedSchema, "") : historySchemaStr);
       } else {
+        // 架构进行了升级
         evolvedSchema.setSchemaId(Long.parseLong(instantTime));
         String newSchemaStr = SerDeHelper.toJson(evolvedSchema);
         metadata.addMetadata(SerDeHelper.LATEST_SCHEMA, newSchemaStr);
+
+        // 存储新的 schema
         schemasManager.persistHistorySchemaStr(instantTime, SerDeHelper.inheritSchemas(evolvedSchema, historySchemaStr));
       }
       // update SCHEMA_KEY
@@ -1576,6 +1593,7 @@ public abstract class BaseHoodieWriteClient<T extends HoodieRecordPayload, I, K,
    */
   public void addColumn(String colName, Schema schema, String doc, String position, TableChange.ColumnPositionChange.ColumnPositionType positionType) {
     Pair<InternalSchema, HoodieTableMetaClient> pair = getInternalSchemaAndMetaClient();
+    // 获取新的 schema
     InternalSchema newSchema = new InternalSchemaChangeApplier(pair.getLeft())
         .applyAddChange(colName, AvroInternalSchemaConverter.convertToField(schema), doc, position, positionType);
     commitTableChange(newSchema, pair.getRight());
@@ -1672,25 +1690,38 @@ public abstract class BaseHoodieWriteClient<T extends HoodieRecordPayload, I, K,
   }
 
   private void commitTableChange(InternalSchema newSchema, HoodieTableMetaClient metaClient) {
+    // 获取老的 schema
     TableSchemaResolver schemaUtil = new TableSchemaResolver(metaClient);
     InternalSchema oldSchema = getInternalSchema(schemaUtil);
     String historySchemaStr = schemaUtil.getTableHistorySchemaStrFromCommitMetadata().orElse(SerDeHelper.inheritSchemas(oldSchema, ""));
+
+    // 生成新的 schema
     Schema schema = AvroInternalSchemaConverter.convert(newSchema, config.getTableName());
     String commitActionType = CommitUtils.getCommitActionType(WriteOperationType.ALTER_SCHEMA, metaClient.getTableType());
     String instantTime = HoodieActiveTimeline.createNewInstantTime();
+
+    // 开始提交时间线
     startCommitWithTime(instantTime, commitActionType, metaClient);
+
+    // 设置新的 schema
     config.setSchema(schema.toString());
+
+
     HoodieActiveTimeline timeLine = metaClient.getActiveTimeline();
     HoodieInstant requested = new HoodieInstant(State.REQUESTED, commitActionType, instantTime);
     HoodieCommitMetadata metadata = new HoodieCommitMetadata();
     metadata.setOperationType(WriteOperationType.ALTER_SCHEMA);
     try {
+      // 提交
       timeLine.transitionRequestedToInflight(requested, Option.of(metadata.toJsonString().getBytes(StandardCharsets.UTF_8)));
     } catch (IOException io) {
       throw new HoodieCommitException("Failed to commit " + instantTime + " unable to save inflight metadata ", io);
     }
+
+    // 新的 schema
     Map<String, String> extraMeta = new HashMap<>();
     extraMeta.put(SerDeHelper.LATEST_SCHEMA, SerDeHelper.toJson(newSchema.setSchemaId(Long.parseLong(instantTime))));
+
     // try to save history schemas
     FileBasedInternalSchemaStorageManager schemasManager = new FileBasedInternalSchemaStorageManager(metaClient);
     schemasManager.persistHistorySchemaStr(instantTime, SerDeHelper.inheritSchemas(newSchema, historySchemaStr));

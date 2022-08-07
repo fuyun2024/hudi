@@ -39,6 +39,12 @@ import java.io.IOException;
 import java.util.List;
 
 /**
+ * 支持 CREATE 增量写入（小批量）的HoodieCreateHandle 。
+ * 对于第一个小批量，它初始化并设置下一个要写入的文件路径，然后关闭文件写入器。
+ * 随后的小批量附加到具有新名称的文件，然后新文件将重命名为此文件名，就像每个小批量数据都附加到同一个文件一样。
+ */
+
+/**
  * A {@link HoodieCreateHandle} that supports CREATE write incrementally(mini-batches).
  *
  * <p>For the first mini-batch, it initializes and sets up the next file path to write,

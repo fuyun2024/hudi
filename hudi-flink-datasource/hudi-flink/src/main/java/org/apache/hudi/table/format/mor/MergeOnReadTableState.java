@@ -36,9 +36,12 @@ public class MergeOnReadTableState implements Serializable {
 
   private final RowType rowType;
   private final RowType requiredRowType;
+  // 表的 schema 信息
   private final String avroSchema;
+  // 请求查询字段的信息,avroSchema 的一个子集
   private final String requiredAvroSchema;
   private final List<MergeOnReadInputSplit> inputSplits;
+  // 主建字段
   private final String[] pkFields;
   private final int operationPos;
 

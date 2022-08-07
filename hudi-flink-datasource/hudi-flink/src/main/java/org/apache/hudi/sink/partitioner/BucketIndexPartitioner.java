@@ -39,6 +39,14 @@ public class BucketIndexPartitioner<T extends HoodieKey> implements Partitioner<
     this.indexKeyFields = indexKeyFields;
   }
 
+  /**
+   * curBucket = key.hashCode % numBuckets
+   * globalHash = (PartitionPath + curBucket)
+   * partition = globalHash % numPartitions
+   * @param key
+   * @param numPartitions
+   * @return
+   */
   @Override
   public int partition(HoodieKey key, int numPartitions) {
     int curBucket = BucketIdentifier.getBucketId(key, indexKeyFields, bucketNum);

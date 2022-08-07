@@ -140,10 +140,17 @@ public class HoodieFlinkWriteClient<T extends HoodieRecordPayload> extends
 
   @Override
   public List<WriteStatus> upsert(List<HoodieRecord<T>> records, String instantTime) {
+    // 根据配置参数，初始化 Table
     HoodieTable<T, List<HoodieRecord<T>>, List<HoodieKey>, List<WriteStatus>> table =
         initTable(WriteOperationType.UPSERT, Option.ofNullable(instantTime));
+
+    // 根据 hoodie.avro.schema.validate 是否校验参数
     table.validateUpsertSchema();
+
+    // 设置写入类型
     preWrite(instantTime, WriteOperationType.UPSERT, table.getMetaClient());
+
+    // 获取数据写入处理类
     final HoodieWriteHandle<?, ?, ?, ?> writeHandle = getOrCreateWriteHandle(records.get(0), getConfig(),
         instantTime, table, records.listIterator());
     HoodieWriteMetadata<List<WriteStatus>> result = ((HoodieFlinkTable<T>) table).upsert(context, writeHandle, instantTime, records);
@@ -271,6 +278,7 @@ public class HoodieFlinkWriteClient<T extends HoodieRecordPayload> extends
     });
   }
 
+  // 初始化表元数据写入器，例如，如果元数据表不存在，则从文件系统引导元数据表。
   /**
    * Initialize the table metadata writer, for e.g, bootstrap the metadata table
    * from the filesystem if it does not exist.
@@ -535,6 +543,7 @@ public class HoodieFlinkWriteClient<T extends HoodieRecordPayload> extends
     final String partitionPath = record.getPartitionPath();
     final boolean insertClustering = config.allowDuplicateInserts();
 
+    // 写入的文件句柄是否存在
     if (bucketToHandles.containsKey(fileID)) {
       MiniBatchHandle lastHandle = (MiniBatchHandle) bucketToHandles.get(fileID);
       if (lastHandle.shouldReplace()) {
@@ -548,15 +557,20 @@ public class HoodieFlinkWriteClient<T extends HoodieRecordPayload> extends
       }
     }
 
+    // 根据文件信息，判断文件的选择的句柄
     final boolean isDelta = table.getMetaClient().getTableType().equals(HoodieTableType.MERGE_ON_READ);
     final HoodieWriteHandle<?, ?, ?, ?> writeHandle;
+
     if (isDelta) {
+      // MERGE_ON_READ 表类型的写入
       writeHandle = new FlinkAppendHandle<>(config, instantTime, table, partitionPath, fileID, recordItr,
           table.getTaskContextSupplier());
     } else if (loc.getInstantTime().equals("I")) {
+      // cow 文件的 insert 写入
       writeHandle = new FlinkCreateHandle<>(config, instantTime, table, partitionPath,
           fileID, table.getTaskContextSupplier());
     } else {
+      // update 的写入
       writeHandle = insertClustering
           ? new FlinkConcatHandle<>(config, instantTime, table, recordItr, partitionPath,
               fileID, table.getTaskContextSupplier())

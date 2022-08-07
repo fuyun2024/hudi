@@ -25,7 +25,13 @@ import org.apache.hadoop.fs.Path;
 import javax.annotation.Nullable;
 
 import java.io.Serializable;
-
+/**
+ * 写入状态的统计
+ * 文件ID,路径，文件的版本
+ * 写入数量，删除数量，更新数量，写入错误的记录
+ * 总的写入数量，字节数
+ * log 相关的参数。
+ */
 /**
  * Statistics about a single Hoodie write operation.
  */

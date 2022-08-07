@@ -41,6 +41,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
+ * 用于记录检查点消息的检查点元数据。
+ * 每次驱动程序启动一个新的时刻，它都会将提交消息写入元数据，然后写入任务会使用该消息并取消阻塞数据刷新
+ */
+/**
  * The checkpoint metadata for bookkeeping the checkpoint messages.
  *
  * <p>Each time the driver starts a new instant, it writes a commit message into the metadata, the write tasks
@@ -212,6 +216,7 @@ public class CkpMetadata implements Serializable {
     return new Path(path, fileName);
   }
 
+  // 扫描元数据路径，获取到对应的 instant and state
   private List<CkpMessage> scanCkpMetadata(Path ckpMetaPath) throws IOException {
     return Arrays.stream(this.fs.listStatus(ckpMetaPath)).map(CkpMessage::new)
         .collect(Collectors.groupingBy(CkpMessage::getInstant)).values().stream()

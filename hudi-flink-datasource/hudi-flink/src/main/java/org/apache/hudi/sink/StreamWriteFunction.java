@@ -95,11 +95,13 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
 
   private static final Logger LOG = LoggerFactory.getLogger(StreamWriteFunction.class);
 
+  // 写入缓冲区的 bucket ,生命周期只是一个 ck
   /**
    * Write buffer as buckets for a checkpoint. The key is bucket ID.
    */
   private transient Map<String, DataBucket> buckets;
 
+  // 执行写记录的函函数 ： initWriteFunction
   private transient BiFunction<List<HoodieRecord>, String, List<WriteStatus>> writeFunction;
 
   /**
@@ -236,6 +238,7 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
    * Data bucket.
    */
   private static class DataBucket {
+    // 记录信息，缓冲区的大小，分区和文件ID
     private final List<DataItem> records;
     private final BufferSizeDetector detector;
     private final String partitionPath;
@@ -258,6 +261,7 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
           .collect(Collectors.toList());
     }
 
+    // todo 作用是什么？
     /**
      * Sets up before flush: patch up the first record with correct partition path and fileID.
      *
@@ -373,16 +377,23 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
    * @param value HoodieRecord
    */
   protected void bufferRecord(HoodieRecord<?> value) {
+    // bucketID : partitionPath_fileId
     final String bucketID = getBucketID(value);
 
+    // 创建桶
     DataBucket bucket = this.buckets.computeIfAbsent(bucketID,
         k -> new DataBucket(this.config.getDouble(FlinkOptions.WRITE_BATCH_SIZE), value));
-    final DataItem item = DataItem.fromHoodieRecord(value);
 
+    // 添加数据到桶中
+    final DataItem item = DataItem.fromHoodieRecord(value);
     bucket.records.add(item);
 
+    // 当一个桶中的数据大于 write.batch.size 时刷新
     boolean flushBucket = bucket.detector.detect(item);
+
+    // 当所有缓存的数据都大于 (write.task.max.size - 100m - write.merge.max_memory) 时刷新
     boolean flushBuffer = this.tracer.trace(bucket.detector.lastRecordSize);
+
     if (flushBucket) {
       if (flushBucket(bucket)) {
         this.tracer.countDown(bucket.detector.totalSize);
@@ -390,6 +401,7 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
       }
     } else if (flushBuffer) {
       // find the max size bucket and flush it out
+      // 选择最大的 bucket 进行刷新
       List<DataBucket> sortedBuckets = this.buckets.values().stream()
           .sorted((b1, b2) -> Long.compare(b2.detector.totalSize, b1.detector.totalSize))
           .collect(Collectors.toList());
@@ -410,6 +422,7 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
 
   @SuppressWarnings("unchecked, rawtypes")
   private boolean flushBucket(DataBucket bucket) {
+    // 为下一个检查点准备即时写入时间。 如果上一个 ck 没有成功写入数据，会阻塞。
     String instant = instantToWrite(true);
 
     if (instant == null) {
@@ -420,12 +433,18 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
 
     List<HoodieRecord> records = bucket.writeBuffer();
     ValidationUtils.checkState(records.size() > 0, "Data bucket to flush has no buffering records");
+
+    // 对数据进行去重
     if (config.getBoolean(FlinkOptions.PRE_COMBINE)) {
       records = FlinkWriteHelper.newInstance().deduplicateRecords(records, (HoodieIndex) null, -1);
     }
+
+    // 开始写入这个桶的数据
     bucket.preWrite(records);
     final List<WriteStatus> writeStatus = new ArrayList<>(writeFunction.apply(records, instant));
     records.clear();
+
+    // 写入数据后，构造 WriteMetadataEvent 发送给 Coordinator
     final WriteMetadataEvent event = WriteMetadataEvent.builder()
         .taskID(taskID)
         .instantTime(instant) // the write instant may shift but the event still use the currentInstant.
@@ -435,13 +454,17 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
         .build();
 
     this.eventGateway.sendEventToCoordinator(event);
+
+    // 把写入信息加入到状态中。
     writeStatuses.addAll(writeStatus);
     return true;
   }
 
   @SuppressWarnings("unchecked, rawtypes")
   private void flushRemaining(boolean endInput) {
+    // 为下一个检查点准备即时写入时间。 如果上一个 ck 没有成功写入数据，会阻塞。
     this.currentInstant = instantToWrite(hasData());
+
     if (this.currentInstant == null) {
       // in case there are empty checkpoints that has no input data
       throw new HoodieException("No inflight instant when flushing data!");
@@ -482,6 +505,7 @@ public class StreamWriteFunction<I> extends AbstractStreamWriteFunction<I> {
     this.writeClient.cleanHandles();
     this.writeStatuses.addAll(writeStatus);
     // blocks flushing until the coordinator starts a new instant
+    // 阻塞写入，直到有新的 new instant 生成
     this.confirming = true;
   }
 }

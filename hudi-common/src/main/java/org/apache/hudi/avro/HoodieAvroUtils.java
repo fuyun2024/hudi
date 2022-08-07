@@ -737,6 +737,8 @@ public class HoodieAvroUtils {
     return (GenericData.Record) newRecord;
   }
 
+  // 给定具有给定模式的 avro 记录，将其重写为新模式，同时仅从新模式设置字段。支持嵌套记录的深度重写和调整重命名操作。
+  // 此特定方法执行以下操作： a) 使用新模式创建一个新的空 GenericRecord。 b) 对于 GenericRecord，将数据从旧模式复制到新模式，或为此转换模式的所有字段设置默认值
   /**
    * Given a avro record with a given schema, rewrites it into the new schema while setting fields only from the new schema.
    * support deep rewrite for nested record and adjust rename operation.

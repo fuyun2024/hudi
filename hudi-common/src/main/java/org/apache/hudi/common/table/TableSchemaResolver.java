@@ -181,6 +181,7 @@ public class TableSchemaResolver {
                             : tableSchema)
             )
             .orElseGet(() -> {
+              // 从数据文件中获取 schema 信息
               Schema schemaFromDataFile = getTableAvroSchemaFromDataFile();
               return includeMetadataFields
                   ? schemaFromDataFile
@@ -200,6 +201,7 @@ public class TableSchemaResolver {
   private Option<Schema> getTableSchemaFromLatestCommitMetadata(boolean includeMetadataFields) {
     Option<Pair<HoodieInstant, HoodieCommitMetadata>> instantAndCommitMetadata = getLatestCommitMetadataWithValidSchema();
     if (instantAndCommitMetadata.isPresent()) {
+      // 取到最后的 schema
       HoodieCommitMetadata commitMetadata = instantAndCommitMetadata.get().getRight();
       String schemaStr = commitMetadata.getMetadata(HoodieCommitMetadata.SCHEMA_KEY);
       Schema schema = new Schema.Parser().parse(schemaStr);
@@ -465,6 +467,7 @@ public class TableSchemaResolver {
    * @return InternalSchema for this table
    */
   public Option<InternalSchema> getTableInternalSchemaFromCommitMetadata() {
+    // 过滤出最后完成的 instant
     HoodieTimeline timeline = metaClient.getActiveTimeline().getCommitsTimeline().filterCompletedInstants();
     return timeline.lastInstant().flatMap(this::getTableInternalSchemaFromCommitMetadata);
   }
@@ -476,6 +479,7 @@ public class TableSchemaResolver {
    */
   private Option<InternalSchema> getTableInternalSchemaFromCommitMetadata(HoodieInstant instant) {
     try {
+      // 获取 instant 中的 latest_schema
       HoodieCommitMetadata metadata = getCachedCommitMetadata(instant);
       String latestInternalSchemaStr = metadata.getMetadata(SerDeHelper.LATEST_SCHEMA);
       if (latestInternalSchemaStr != null) {
@@ -517,8 +521,10 @@ public class TableSchemaResolver {
 
   private Option<Pair<HoodieInstant, HoodieCommitMetadata>> getLatestCommitMetadataWithValidSchema() {
     if (latestCommitWithValidSchema == null) {
+      // 从后往前查找 instant 中包含 schema 的 instant
       Option<Pair<HoodieInstant, HoodieCommitMetadata>> instantAndCommitMetadata =
           metaClient.getActiveTimeline().getLastCommitMetadataWithValidSchema();
+
       if (instantAndCommitMetadata.isPresent()) {
         HoodieInstant instant = instantAndCommitMetadata.get().getLeft();
         HoodieCommitMetadata metadata = instantAndCommitMetadata.get().getRight();

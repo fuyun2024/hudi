@@ -191,6 +191,7 @@ public abstract class AbstractStreamWriteFunction<I>
   //  Utilities
   // -------------------------------------------------------------------------
 
+  // 恢复写入的元数据
   private void restoreWriteMetadata() throws Exception {
     String lastInflight = lastPendingInstant();
     boolean eventSent = false;
@@ -200,6 +201,7 @@ public abstract class AbstractStreamWriteFunction<I>
         event.setTaskID(taskID);
         // The checkpoint succeed but the meta does not commit,
         // re-commit the inflight instant
+        // 检查点成功，但是没有提交，需要再次向 coordinator 发送时间数据
         this.eventGateway.sendEventToCoordinator(event);
         LOG.info("Send uncommitted write metadata event to coordinator, task[{}].", taskID);
         eventSent = true;
@@ -218,7 +220,9 @@ public abstract class AbstractStreamWriteFunction<I>
   /**
    * Reload the write metadata state as the current checkpoint.
    */
+  // 将写入元数据状态重新加载为当前检查点。
   private void reloadWriteMetaState() throws Exception {
+    // 清理上一次的 state
     this.writeMetadataState.clear();
     WriteMetadataEvent event = WriteMetadataEvent.builder()
         .taskID(taskID)
@@ -226,10 +230,13 @@ public abstract class AbstractStreamWriteFunction<I>
         .writeStatus(new ArrayList<>(writeStatuses))
         .bootstrap(true)
         .build();
+
+    // 写入元数据
     this.writeMetadataState.add(event);
     writeStatuses.clear();
   }
 
+  // 接收处理coordinate 确认的事件
   public void handleOperatorEvent(OperatorEvent event) {
     ValidationUtils.checkArgument(event instanceof CommitAckEvent,
         "The write function can only handle CommitAckEvent");
@@ -258,6 +265,7 @@ public abstract class AbstractStreamWriteFunction<I>
         .action("instant initialize")
         .build();
     while (confirming) {
+      // 没有 inflight 中的 instant 或者 inflight 没有完成，那么需要等待 ckpMetadata 创建出来
       // wait condition:
       // 1. there is no inflight instant
       // 2. the inflight instant does not change and the checkpoint has buffering data

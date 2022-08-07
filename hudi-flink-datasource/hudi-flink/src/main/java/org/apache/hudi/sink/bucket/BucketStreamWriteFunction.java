@@ -57,12 +57,14 @@ public class BucketStreamWriteFunction<I> extends StreamWriteFunction<I> {
 
   private String indexKeyFields;
 
+  // 主要作用是来了一条记录能快速找到对应的文件ID
   /**
    * BucketID to file group mapping in each partition.
    * Map(partition -> Map(bucketId, fileID)).
    */
   private Map<String, Map<Integer, String>> bucketIndex;
 
+  // 维护这次快照中新建的 bucket 信息
   /**
    * Incremental bucket index of the current checkpoint interval,
    * it is needed because the bucket type('I' or 'U') should be decided based on the committed files view,
@@ -108,16 +110,24 @@ public class BucketStreamWriteFunction<I> extends StreamWriteFunction<I> {
     final String partition = hoodieKey.getPartitionPath();
     final HoodieRecordLocation location;
 
+    // bucketIndex : Map(partition -> Map(bucketId, fileID))
+    // init bucketIndex.put(partition, bucketToFileIDMap)
     bootstrapIndexIfNeed(partition);
+
+    // bucketNum = key % bucketNum
     Map<Integer, String> bucketToFileId = bucketIndex.computeIfAbsent(partition, p -> new HashMap<>());
     final int bucketNum = BucketIdentifier.getBucketId(hoodieKey, indexKeyFields, this.bucketNum);
     final String bucketId = partition + bucketNum;
 
+    // 获取这个记录的 location
     if (incBucketIndex.contains(bucketId)) {
+      // 文件还没有创建，在内存中
       location = new HoodieRecordLocation("I", bucketToFileId.get(bucketNum));
     } else if (bucketToFileId.containsKey(bucketNum)) {
+      // 文件已经存在，更新
       location = new HoodieRecordLocation("U", bucketToFileId.get(bucketNum));
     } else {
+      // 第一次分配这个记录
       String newFileId = BucketIdentifier.newBucketFileIdPrefix(bucketNum);
       location = new HoodieRecordLocation("I", newFileId);
       bucketToFileId.put(bucketNum, newFileId);

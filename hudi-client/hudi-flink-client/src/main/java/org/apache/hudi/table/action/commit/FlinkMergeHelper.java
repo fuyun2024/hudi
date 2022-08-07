@@ -65,8 +65,13 @@ public class FlinkMergeHelper<T extends HoodieRecordPayload> extends BaseMergeHe
     final GenericDatumReader<GenericRecord> gReader;
     Schema readSchema;
 
+    // 获取外部 schema 的转换
     final boolean externalSchemaTransformation = table.getConfig().shouldUseExternalSchemaTransformation();
+
+    // 获取 base 文件
     HoodieBaseFile baseFile = mergeHandle.baseFileForMerge();
+
+    // 到底用哪个 schema
     if (externalSchemaTransformation || baseFile.getBootstrapBaseFile().isPresent()) {
       readSchema = HoodieFileReaderFactory.getFileReader(table.getHadoopConf(), mergeHandle.getOldFilePath()).getSchema();
       gWriter = new GenericDatumWriter<>(readSchema);
@@ -79,6 +84,8 @@ public class FlinkMergeHelper<T extends HoodieRecordPayload> extends BaseMergeHe
 
     BoundedInMemoryExecutor<GenericRecord, GenericRecord, Void> wrapper = null;
     Configuration cfgForHoodieFile = new Configuration(table.getHadoopConf());
+
+    // 读取老文件的数据
     HoodieFileReader<GenericRecord> reader = HoodieFileReaderFactory.<GenericRecord>getFileReader(cfgForHoodieFile, mergeHandle.getOldFilePath());
     try {
       final Iterator<GenericRecord> readerIterator;
@@ -90,8 +97,11 @@ public class FlinkMergeHelper<T extends HoodieRecordPayload> extends BaseMergeHe
 
       ThreadLocal<BinaryEncoder> encoderCache = new ThreadLocal<>();
       ThreadLocal<BinaryDecoder> decoderCache = new ThreadLocal<>();
+
+      // 在内存的执行者，一个线程写入队列，一个线程读取队列信息写入到文件中
       wrapper = new BoundedInMemoryExecutor<>(table.getConfig().getWriteBufferLimitBytes(), new IteratorBasedQueueProducer<>(readerIterator),
           Option.of(new UpdateHandler(mergeHandle)), record -> {
+        // 当开启 schema 转换的时候，对 schema 进  行转化
         if (!externalSchemaTransformation) {
           return record;
         }

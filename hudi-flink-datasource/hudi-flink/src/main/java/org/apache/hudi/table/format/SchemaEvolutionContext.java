@@ -56,6 +56,7 @@ public final class SchemaEvolutionContext implements Serializable {
   public static Option<SchemaEvolutionContext> of(Configuration conf) {
     if (conf.getBoolean(FlinkOptions.SCHEMA_EVOLUTION_ENABLED)) {
       HoodieTableMetaClient metaClient = StreamerUtil.createMetaClient(conf);
+      // 获取最后的 schema 信息
       return new TableSchemaResolver(metaClient)
           .getTableInternalSchemaFromCommitMetadata()
           .map(schema -> new SchemaEvolutionContext(metaClient, schema));

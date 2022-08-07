@@ -331,10 +331,13 @@ public class HoodieTableSource implements
     return isStreaming ? getStreamInputFormat() : getBatchInputFormat();
   }
 
+  // 获取文件位置
   private InputFormat<RowData, ?> getBatchInputFormat() {
+    // 从最后的提交中获取表的 schema 信息
     final Schema tableAvroSchema = getTableAvroSchema();
     final DataType rowDataType = AvroSchemaConverter.convertToDataType(tableAvroSchema);
     final RowType rowType = (RowType) rowDataType.getLogicalType();
+    // 获取当前请求查询字段的 schema 信息
     final RowType requiredRowType = (RowType) getProducedDataType().notNull().getLogicalType();
 
     final String queryType = this.conf.getString(FlinkOptions.QUERY_TYPE);

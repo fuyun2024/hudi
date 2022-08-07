@@ -163,6 +163,7 @@ public class BucketAssignFunction<K, I, O extends HoodieRecord<?>>
     }
   }
 
+  // 根据 key 进行分区，核心是如何分桶
   @SuppressWarnings("unchecked")
   private void processRecord(HoodieRecord<?> record, Collector<O> out) throws Exception {
     // 1. put the record into the BucketAssigner;
@@ -180,6 +181,7 @@ public class BucketAssignFunction<K, I, O extends HoodieRecord<?>>
       // Set up the instant time as "U" to mark the bucket as an update bucket.
       if (!Objects.equals(oldLoc.getPartitionPath(), partitionPath)) {
         if (globalIndex) {
+          // 当发生了分区变更的操作。老的记录要构造一条 deleted 的记录进行删除
           // if partition path changes, emit a delete record for old partition path,
           // then update the index state using location with new partition path.
           HoodieRecord<?> deleteRecord = new HoodieAvroRecord<>(new HoodieKey(recordKey, oldLoc.getPartitionPath()),
@@ -194,6 +196,7 @@ public class BucketAssignFunction<K, I, O extends HoodieRecord<?>>
         this.bucketAssigner.addUpdate(partitionPath, location.getFileId());
       }
     } else {
+      // 文件第一次进行分配，创建一个位置
       location = getNewRecordLocation(partitionPath);
     }
     // always refresh the index

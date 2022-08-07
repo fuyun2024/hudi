@@ -59,9 +59,11 @@ public class HoodieCreateHandle<T extends HoodieRecordPayload, I, K, O> extends 
   protected final Path path;
   protected long recordsWritten = 0;
   protected long insertRecordsWritten = 0;
+  // 写入也有删除的记录，可能是 avro 不存在，标记为删除
   protected long recordsDeleted = 0;
   private Map<String, HoodieRecord<T>> recordMap;
   private boolean useWriterSchema = false;
+  // 重写数据时，保留现有的 hoodie_commit_time
   private final boolean preserveMetadata;
 
   public HoodieCreateHandle(HoodieWriteConfig config, String instantTime, HoodieTable<T, I, K, O> hoodieTable,
@@ -96,11 +98,13 @@ public class HoodieCreateHandle<T extends HoodieRecordPayload, I, K, O> extends 
     this.path = makeNewPath(partitionPath);
 
     try {
+      // todo ?
       HoodiePartitionMetadata partitionMetadata = new HoodiePartitionMetadata(fs, instantTime,
           new Path(config.getBasePath()), FSUtils.getPartitionPath(config.getBasePath(), partitionPath),
           hoodieTable.getPartitionMetafileFormat());
       partitionMetadata.trySave(getPartitionId());
       createMarkerFile(partitionPath, FSUtils.makeBaseFileName(this.instantTime, this.writeToken, this.fileId, hoodieTable.getBaseFileExtension()));
+
       this.fileWriter = HoodieFileWriterFactory.getFileWriter(instantTime, path, hoodieTable, config,
         writeSchemaWithMetaFields, this.taskContextSupplier);
     } catch (IOException e) {
@@ -131,10 +135,14 @@ public class HoodieCreateHandle<T extends HoodieRecordPayload, I, K, O> extends 
    */
   @Override
   public void write(HoodieRecord record, Option<IndexedRecord> avroRecord) {
+    // 真正的写入一条数据
     Option recordMetadata = ((HoodieRecordPayload) record.getData()).getMetadata();
+
+    // 如果是一条删除记录，返回
     if (HoodieOperation.isDelete(record.getOperation())) {
       avroRecord = Option.empty();
     }
+
     try {
       if (avroRecord.isPresent()) {
         if (avroRecord.get().equals(IGNORE_RECORD)) {
@@ -142,12 +150,15 @@ public class HoodieCreateHandle<T extends HoodieRecordPayload, I, K, O> extends 
         }
         // Convert GenericRecord to GenericRecord with hoodie commit metadata in schema
         if (preserveMetadata) {
+          // 重写数据时，保留现有的 hoodie_commit_time
           fileWriter.writeAvro(record.getRecordKey(),
               rewriteRecordWithMetadata((GenericRecord) avroRecord.get(), path.getName()));
         } else {
+          // 填充元数据信息，并写入数据到 parquet
           fileWriter.writeAvroWithMetadata(record.getKey(), rewriteRecord((GenericRecord) avroRecord.get()));
         }
         // update the new location of record, so we know where to find it next
+        // 设置当前写入的 location
         record.unseal();
         record.setNewLocation(new HoodieRecordLocation(instantTime, writeStatus.getFileId()));
         record.seal();
@@ -169,6 +180,7 @@ public class HoodieCreateHandle<T extends HoodieRecordPayload, I, K, O> extends 
     }
   }
 
+  // compaction 写入流程
   /**
    * Writes all records passed.
    */

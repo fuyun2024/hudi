@@ -147,6 +147,7 @@ public class HoodieLogFileReader implements HoodieLogFormat.Reader {
 
   // TODO : convert content and block length to long by using ByteBuffer, raw byte [] allows
   // for max of Integer size
+  // 真正的从文件流中读取出一个文件块的信息
   private HoodieLogBlock readBlock() throws IOException {
     int blockSize;
     try {
@@ -295,6 +296,7 @@ public class HoodieLogFileReader implements HoodieLogFormat.Reader {
     }
 
     try {
+      // todo ? 这个是为什么呢？ 没有下一个了怎么办？
       readMagic();
       // all good - either we found the sync marker or EOF. Reset position and continue
       return false;
@@ -330,6 +332,7 @@ public class HoodieLogFileReader implements HoodieLogFormat.Reader {
     }
   }
 
+  // 当 JVM 失败后，如何回收资源，定义一个 ShutdownHook
   @Override
   public void close() throws IOException {
     if (!closed) {
@@ -362,6 +365,7 @@ public class HoodieLogFileReader implements HoodieLogFormat.Reader {
 
   private boolean readMagic() throws IOException {
     try {
+      // 是否还有开始的标记
       boolean hasMagic = hasNextMagic();
       if (!hasMagic) {
         throw new CorruptedLogFileException(

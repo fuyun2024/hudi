@@ -97,8 +97,10 @@ public class BoundedInMemoryExecutor<I, O, E> {
   public ExecutorCompletionService<Boolean> startProducers() {
     // Latch to control when and which producer thread will close the queue
     final CountDownLatch latch = new CountDownLatch(producers.size());
+
     final ExecutorCompletionService<Boolean> completionService =
         new ExecutorCompletionService<Boolean>(producerExecutorService);
+
     producers.stream().map(producer -> {
       return completionService.submit(() -> {
         try {

@@ -97,16 +97,21 @@ public class HoodieLogFormatReader implements HoodieLogFormat.Reader {
     if (currentReader == null) {
       return false;
     } else if (currentReader.hasNext()) {
+      // 有开始读取得标记
       return true;
     } else if (logFiles.size() > 0) {
       try {
         HoodieLogFile nextLogFile = logFiles.remove(0);
         // First close previous reader only if readBlockLazily is true
         if (!readBlocksLazily) {
+          // 不是懒加载，我们说明这个文件读取完毕，关闭流读取
           this.currentReader.close();
         } else {
+          // 把当前读取放入到
           this.prevReadersInOpenState.add(currentReader);
         }
+
+        // 创建一个新的读取器
         this.currentReader = new HoodieLogFileReader(fs, nextLogFile, readerSchema, bufferSize, readBlocksLazily, false,
             enableInlineReading, recordKeyField, internalSchema);
       } catch (IOException io) {

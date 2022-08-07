@@ -196,6 +196,7 @@ public abstract class AbstractHoodieLogRecordReader {
     scanInternal(Option.of(new KeySpec(keys, true)));
   }
 
+  // 扫描读取 log 文件数据
   protected synchronized void scanInternal(Option<KeySpec> keySpecOpt) {
     currentInstantLogBlocks = new ArrayDeque<>();
     progress = 0.0f;
@@ -205,6 +206,7 @@ public abstract class AbstractHoodieLogRecordReader {
     totalLogBlocks = new AtomicLong(0);
     totalLogRecords = new AtomicLong(0);
     HoodieLogFormatReader logFormatReaderWrapper = null;
+    // 获取最后的提交时间
     HoodieTimeline commitsTimeline = this.hoodieTableMetaClient.getCommitsTimeline();
     HoodieTimeline completedInstantsTimeline = commitsTimeline.filterCompletedInstants();
     HoodieTimeline inflightInstantsTimeline = commitsTimeline.filterInflights();
@@ -215,18 +217,25 @@ public abstract class AbstractHoodieLogRecordReader {
 
       // Iterate over the paths
       boolean enableRecordLookups = !forceFullScan;
+      // 真正的 hoodieLog 文件读取器
       logFormatReaderWrapper = new HoodieLogFormatReader(fs,
           logFilePaths.stream().map(logFile -> new HoodieLogFile(new Path(logFile))).collect(Collectors.toList()),
           readerSchema, readBlocksLazily, reverseReader, bufferSize, enableRecordLookups, keyField, internalSchema);
 
       Set<HoodieLogFile> scannedLogFiles = new HashSet<>();
+
+      // 是否有下一个块可以读取
       while (logFormatReaderWrapper.hasNext()) {
         HoodieLogFile logFile = logFormatReaderWrapper.getLogFile();
         LOG.info("Scanning log file " + logFile);
         scannedLogFiles.add(logFile);
         totalLogFiles.set(scannedLogFiles.size());
         // Use the HoodieLogFileReader to iterate through the blocks in the log file
+
+        // 遍历日志文件中的块
         HoodieLogBlock logBlock = logFormatReaderWrapper.next();
+
+        // 获取文件头的提交时间
         final String instantTime = logBlock.getLogBlockHeader().get(INSTANT_TIME);
         totalLogBlocks.incrementAndGet();
         if (logBlock.getBlockType() != CORRUPT_BLOCK
@@ -377,8 +386,10 @@ public abstract class AbstractHoodieLogRecordReader {
    */
   private void processDataBlock(HoodieDataBlock dataBlock, Option<KeySpec> keySpecOpt) throws Exception {
     try (ClosableIterator<IndexedRecord> recordIterator = getRecordsIterator(dataBlock, keySpecOpt)) {
+      // 获取 merge 后的文件信息
       Option<Schema> schemaOption = getMergedSchema(dataBlock);
       while (recordIterator.hasNext()) {
+        // 获取当前的记录
         IndexedRecord currentRecord = recordIterator.next();
         IndexedRecord record = schemaOption.isPresent() ? HoodieAvroUtils.rewriteRecordWithNewSchema(currentRecord, schemaOption.get(), Collections.emptyMap()) : currentRecord;
         processNextRecord(createHoodieRecord(record, this.hoodieTableMetaClient.getTableConfig(), this.payloadClassFQN,
@@ -400,9 +411,14 @@ public abstract class AbstractHoodieLogRecordReader {
   private Option<Schema> getMergedSchema(HoodieDataBlock dataBlock) {
     Option<Schema> result = Option.empty();
     if (!internalSchema.isEmptySchema()) {
+      // 从块中文件头获取提交时间
       Long currentInstantTime = Long.parseLong(dataBlock.getLogBlockHeader().get(INSTANT_TIME));
+
+      // 查找提交时间对应的 schema 信息
       InternalSchema fileSchema = InternalSchemaCache
           .searchSchemaAndCache(currentInstantTime, hoodieTableMetaClient, false);
+
+      // merge schema 时间信息
       Schema mergeSchema = AvroInternalSchemaConverter
           .convert(new InternalSchemaMerger(fileSchema, internalSchema, true, false).mergeSchema(), readerSchema.getName());
       result = Option.of(mergeSchema);

@@ -35,6 +35,10 @@ import java.util.stream.Collectors;
 public class AvroSchemaEvolutionUtils {
 
   /**
+   * 表中已经定义列, 但是没有数据写入 -> 空值将被注入到缺失的列中
+   * 写入的数据，在表中没有找到 -> 列将添加到表 schema
+   */
+  /**
    * Support reconcile from a new avroSchema.
    * 1) incoming data has missing columns that were already defined in the table –> null values will be injected into missing columns
    * 2) incoming data contains new columns not defined yet in the table -> columns will be added to the table schema (incoming dataframe?)

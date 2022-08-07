@@ -27,6 +27,7 @@ import java.util.Deque;
  * Timing utility to help keep track of execution times of code blocks. This class helps to allow multiple timers
  * started at the same time and automatically returns the execution time in the order in which the timers are stopped.
  */
+// 定时类的工具，可以设置多个开始和结束的时间
 public class HoodieTimer {
 
   // Ordered stack of TimeInfo's to make sure stopping the timer returns the correct elapsed time

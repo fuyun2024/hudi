@@ -102,9 +102,13 @@ public abstract class BaseFlinkCommitActionExecutor<T extends HoodieRecordPayloa
     final HoodieRecord<?> record = inputRecords.get(0);
     final String partitionPath = record.getPartitionPath();
     final String fileId = record.getCurrentLocation().getFileId();
+
+    // 获取文件写入的类型
     final BucketType bucketType = record.getCurrentLocation().getInstantTime().equals("I")
         ? BucketType.INSERT
         : BucketType.UPDATE;
+
+    // 处理写入文件
     handleUpsertPartition(
         instantTime,
         partitionPath,
@@ -176,6 +180,7 @@ public abstract class BaseFlinkCommitActionExecutor<T extends HoodieRecordPayloa
       String fileIdHint,
       BucketType bucketType,
       Iterator recordItr) {
+    // 根据 handle 决定写入的方法
     try {
       if (this.writeHandle instanceof HoodieCreateHandle) {
         // During one checkpoint interval, an insert record could also be updated,

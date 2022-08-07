@@ -42,6 +42,7 @@ import java.util.Map;
 import static org.apache.hudi.common.util.ValidationUtils.checkState;
 
 /**
+ * 文件块的基础抽象
  * Abstract class defining a block in HoodieLogFile.
  */
 public abstract class HoodieLogBlock {

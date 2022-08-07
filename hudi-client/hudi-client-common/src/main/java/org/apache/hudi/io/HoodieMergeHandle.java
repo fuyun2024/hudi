@@ -178,11 +178,13 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload, I, K, O> extends H
       String latestValidFilePath = baseFileToMerge.getFileName();
       writeStatus.getStat().setPrevCommit(FSUtils.getCommitTime(latestValidFilePath));
 
+      // 创建分区元数据路径 todo ?
       HoodiePartitionMetadata partitionMetadata = new HoodiePartitionMetadata(fs, instantTime,
           new Path(config.getBasePath()), FSUtils.getPartitionPath(config.getBasePath(), partitionPath),
           hoodieTable.getPartitionMetafileFormat());
       partitionMetadata.trySave(getPartitionId());
 
+      // 制作新的文件名
       String newFileName = FSUtils.makeBaseFileName(instantTime, writeToken, fileId, hoodieTable.getBaseFileExtension());
       makeOldAndNewFilePaths(partitionPath, latestValidFilePath, newFileName);
 
@@ -244,6 +246,7 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload, I, K, O> extends H
     return true;
   }
 
+  // init keyToNewRecords
   /**
    * Load the new incoming records in a map and return partitionPath.
    */
@@ -268,15 +271,24 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload, I, K, O> extends H
         + ((ExternalSpillableMap) keyToNewRecords).getSizeOfFileOnDiskInBytes());
   }
 
+  /**
+   *
+   * @param hoodieRecord 新的记录
+   * @param oldRecord 老的记录
+   * @param indexedRecord combineAndGetUpdateValue 后的值
+   * @return
+   */
   private boolean writeUpdateRecord(HoodieRecord<T> hoodieRecord, GenericRecord oldRecord, Option<IndexedRecord> indexedRecord) {
     boolean isDelete = false;
     if (indexedRecord.isPresent()) {
       updatedRecordsWritten++;
       GenericRecord record = (GenericRecord) indexedRecord.get();
       if (oldRecord != record) {
+        // 新写入的数据，是一个删除操作的数据。
         // the incoming record is chosen
         isDelete = HoodieOperation.isDelete(hoodieRecord.getOperation());
       } else {
+        // 新老数据相等，不处理，让上层重新复制。
         // the incoming record is dropped
         return false;
       }
@@ -302,6 +314,7 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload, I, K, O> extends H
 
   protected boolean writeRecord(HoodieRecord<T> hoodieRecord, Option<IndexedRecord> indexedRecord, boolean isDelete) {
     Option recordMetadata = hoodieRecord.getData().getMetadata();
+    // 记录写入的分区不一样，报错。
     if (!partitionPath.equals(hoodieRecord.getPartitionPath())) {
       HoodieUpsertException failureEx = new HoodieUpsertException("mismatched partition path, record partition: "
           + hoodieRecord.getPartitionPath() + " but trying to insert into partition: " + partitionPath);
@@ -310,6 +323,7 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload, I, K, O> extends H
     }
     try {
       if (indexedRecord.isPresent() && !isDelete) {
+        // 更新写入数据
         writeToFile(hoodieRecord.getKey(), (GenericRecord) indexedRecord.get(), preserveMetadata && useWriterSchemaForCompaction);
         recordsWritten++;
       } else {
@@ -337,8 +351,10 @@ public class HoodieMergeHandle<T extends HoodieRecordPayload, I, K, O> extends H
     if (keyToNewRecords.containsKey(key)) {
       // If we have duplicate records that we are updating, then the hoodie record will be deflated after
       // writing the first record. So make a copy of the record to be merged
+      // 新写入的数据
       HoodieRecord<T> hoodieRecord = keyToNewRecords.get(key).newInstance();
       try {
+        // 新老数据进行比较
         Option<IndexedRecord> combinedAvroRecord =
             hoodieRecord.getData().combineAndGetUpdateValue(oldRecord,
               useWriterSchemaForCompaction ? tableSchemaWithMetaFields : tableSchema,

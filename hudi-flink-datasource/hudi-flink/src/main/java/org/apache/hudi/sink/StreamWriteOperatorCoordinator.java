@@ -239,11 +239,13 @@ public class StreamWriteOperatorCoordinator
 
   @Override
   public void notifyCheckpointComplete(long checkpointId) {
+    // 异步执行 ck 成功之后的的操作
     executor.execute(
         () -> {
           // The executor thread inherits the classloader of the #notifyCheckpointComplete
           // caller, which is a AppClassLoader.
           Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+          // 对于流模式，无论如何都会提交曾经收到的事件，流写入任务快照并按顺序同步刷新数据缓冲区，因此成功的检查点包含旧的（遵循检查点包含合同）
           // for streaming mode, commits the ever received events anyway,
           // the stream write task snapshot and flush the data buffer synchronously in sequence,
           // so a successful checkpoint subsumes the old one(follows the checkpoint subsuming contract)
@@ -273,6 +275,7 @@ public class StreamWriteOperatorCoordinator
   public void notifyCheckpointAborted(long checkpointId) {
     if (checkpointId == this.checkpointId && !WriteMetadataEvent.BOOTSTRAP_INSTANT.equals(this.instant)) {
       executor.execute(() -> {
+        // ck_meta 管理的表设置终止
         this.ckpMetadata.abortInstant(this.instant);
       }, "abort instant %s", this.instant);
     }
@@ -297,8 +300,10 @@ public class StreamWriteOperatorCoordinator
       executor.execute(
           () -> {
             if (event.isBootstrap()) {
+              // 任务恢复的时候，发送事件
               handleBootstrapEvent(event);
             } else {
+              // 任务正常发送的事件
               handleWriteMetaEvent(event);
             }
           }, "handle write metadata event for instant %s", this.instant
@@ -376,6 +381,7 @@ public class StreamWriteOperatorCoordinator
     }
   }
 
+  // 开始新的实 instant ， metaClient.commit ,ckpMetadata.startInstant
   private void startInstant() {
     // put the assignment in front of metadata generation,
     // because the instant request from write task is asynchronous.
@@ -413,6 +419,7 @@ public class StreamWriteOperatorCoordinator
     }, "initialize instant %s", instant);
   }
 
+  // ck 恢复后，检查上次是否有没有提交的任务。
   private void handleBootstrapEvent(WriteMetadataEvent event) {
     this.eventBuffer[event.getTaskID()] = event;
     if (Arrays.stream(eventBuffer).allMatch(evt -> evt != null && evt.isBootstrap())) {
@@ -446,6 +453,7 @@ public class StreamWriteOperatorCoordinator
     addEventToBuffer(event);
   }
 
+  // 如果这一轮检查点没有数据，协调器将重用该瞬间，发送提交确认事件以解除对刷新的阻塞。
   /**
    * The coordinator reuses the instant if there is no data for this round of checkpoint,
    * sends the commit ack events to unblock the flushing.
@@ -471,6 +479,7 @@ public class StreamWriteOperatorCoordinator
         || throwable.getCause().getMessage().contains("running");
   }
 
+  // 提交恢复的 instant
   /**
    * Commits the instant.
    */
@@ -478,12 +487,14 @@ public class StreamWriteOperatorCoordinator
     commitInstant(instant, -1);
   }
 
+  // 提交这次的 instant
   /**
    * Commits the instant.
    *
    * @return true if the write statuses are committed successfully.
    */
   private boolean commitInstant(String instant, long checkpointId) {
+    // 所有检查点成功完成
     if (Arrays.stream(eventBuffer).allMatch(Objects::isNull)) {
       // The last checkpoint finished successfully.
       return false;
@@ -496,14 +507,17 @@ public class StreamWriteOperatorCoordinator
         .collect(Collectors.toList());
 
     if (writeResults.size() == 0) {
+      // 没有数据写入
       // No data has written, reset the buffer and returns early
       reset();
+      // 向写入 write 发送提交确认事件, 以解除对刷新的阻塞. 如果该检查点没有输入而下一个检查点有输入，则应使用 ack 事件切换“isConfirming”标志。
       // Send commit ack event to the write function to unblock the flushing
       // If this checkpoint has no inputs while the next checkpoint has inputs,
       // the 'isConfirming' flag should be switched with the ack event.
       sendCommitAckEvents(checkpointId);
       return false;
     }
+    // 提交
     doCommit(instant, writeResults);
     return true;
   }
@@ -518,6 +532,7 @@ public class StreamWriteOperatorCoordinator
     long totalRecords = writeResults.stream().map(WriteStatus::getTotalRecords).reduce(Long::sum).orElse(0L);
     boolean hasErrors = totalErrorRecords > 0;
 
+    // 没有错误的写入记录，并且忽略写入失败
     if (!hasErrors || this.conf.getBoolean(FlinkOptions.IGNORE_FAILED)) {
       HashMap<String, String> checkpointCommitMetadata = new HashMap<>();
       if (hasErrors) {
@@ -525,13 +540,18 @@ public class StreamWriteOperatorCoordinator
             + totalErrorRecords + "/" + totalRecords);
       }
 
+      // 获取分区下的文件信息
       final Map<String, List<String>> partitionToReplacedFileIds = tableState.isOverwrite
           ? writeClient.getPartitionToReplacedFileIds(tableState.operationType, writeResults)
           : Collections.emptyMap();
+      // 提交元数据信息
       boolean success = writeClient.commit(instant, writeResults, Option.of(checkpointCommitMetadata),
           tableState.commitAction, partitionToReplacedFileIds);
       if (success) {
+        // 提交成功，重置缓冲区
         reset();
+
+        // 元数据缓冲区设置提交成功
         this.ckpMetadata.commitInstant(instant);
         LOG.info("Commit instant [{}] success!", instant);
       } else {
@@ -547,6 +567,7 @@ public class StreamWriteOperatorCoordinator
           ws.getErrors().forEach((key, value) -> LOG.trace("Error for key:" + key + " and value " + value));
         }
       });
+      // 回滚，并且抛出异常
       // Rolls back instant
       writeClient.rollback(instant);
       throw new HoodieException(String.format("Commit instant [%s] failed and rolled back !", instant));
@@ -603,6 +624,7 @@ public class StreamWriteOperatorCoordinator
     }
   }
 
+  // 维护表的一些状态信息
   /**
    * Remember some table state variables.
    */
